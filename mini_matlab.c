@@ -1,7 +1,7 @@
 /*
 * Filename: mini_matlab.c
 * Author: Sebastian Pacocha
-* Date: 10/03/2025
+* Date: 10/08/2025
 * Description: A simplified version of MATLAB for vector operations.
 * Compilation: gcc -o test mini_matlab.c vector.c -lm
 * Run: ./test
