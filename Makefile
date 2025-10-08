@@ -15,7 +15,7 @@ $(EXECUTABLE): $(OBJECTS)
 	$(CC) $(OBJECTS) $(LDFLAGS) -o $@
 .c.o:
 	$(CC) $(CFLAGS) $< -o $@
-	$(CC) -MM $< > $*.depencecy
+	$(CC) -MM $< > $*.d
 
 clean:
 	rm -rf $(OBJECTS) $(EXECUTABLE) *.d
