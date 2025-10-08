@@ -1,10 +1,10 @@
 CC=gcc
-CFLAGS= -Wall
-LDFLAGS=
-SOURCES= vector.c mini_matlab.c
+CFLAGS=-c -Wall 
+LDFLAGS=-lm
+SOURCES= mini_matlab.c vector.c
 HEADERS= vector.h
 OBJECTS=$(SOURCES:.c=.o)
-EXECUTABLE= lab4
+EXECUTABLE= lab5
 
 all: $(SOURCES) $(EXECUTABLE)
 
