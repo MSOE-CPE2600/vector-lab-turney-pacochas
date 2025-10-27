@@ -1,10 +1,11 @@
 /*
 * Filename: mini_matlab.c
 * Author: Sebastian Pacocha
-* Date: 10/03/2025
-* Description: A simplified version of MATLAB for vector operations.
-* Compilation: gcc -o lab5 mini_matlab.c vector.c -lm
-* Run: ./lab5
+* Date: 10/22/2025
+* Description: An updated version of the mini_matlab program that 
+*              saves and loads vectors from a csv file.
+* Compilation: gcc -o mini_matlab mini_matlab.c vector.c -lm
+* Usage: valgrind ./mini_matlab
 */
 
 #include <stdio.h>
@@ -15,36 +16,29 @@
 #include "vector.h"
 
 #define MAX_VECTORS 10
-
 void print_help();
 
 int main(void) {
     char input[100];
-    char *lhs, *eq, *rhs1, *op, *rhs2;
     bool running = true;
-    Vector *vectors[MAX_VECTORS];
+    Vector **vectors = malloc(MAX_VECTORS * sizeof(Vector *));
     int vector_count = 0;
 
-    for (int i = 0; i < MAX_VECTORS; i++) {
-        vectors[i] = NULL;
+    if (!vectors) {
+        fprintf(stderr, "Error: Memory allocation failed.\n");
+        return 1;
     }
 
     print_help();
 
     while (running) {
         printf(">> ");
-        if (fgets(input, sizeof(input), stdin) == NULL) {
+        if (fgets(input, sizeof(input), stdin) == NULL)
             continue;
-        }
+        input[strcspn(input, "\n")] = '\0'; // remove newline
 
-        // Remove newline
-        input[strcspn(input, "\n")] = '\0';
-
-        // --- Simple commands ---
-        if (strcmp(input, "quit") == 0) {
-            running = false;
-            continue;
-        }
+        // --- Non-vector commands ---
+        if (strcmp(input, "quit") == 0) break;
 
         if (strcmp(input, "help") == 0) {
             print_help();
@@ -58,174 +52,178 @@ int main(void) {
 
         if (strcmp(input, "clear") == 0) {
             clear(vectors, vector_count);
+            printf("Vectors cleared.\n");
             vector_count = 0;
+            continue;
+        }
+
+        // --- Load command ---
+        if (strncmp(input, "load", 4) == 0) {
+            char *filename = input + 4;
+            while (isspace((unsigned char)*filename)) filename++;
+            if (*filename == '\0') {
+                printf("Error: Missing filename for load command.\n");
+                continue;
+            }
+            load(filename, vectors, &vector_count);
+            continue;
+        }
+
+        // --- Save command ---
+        if (strncmp(input, "save", 4) == 0) {
+            char *filename = input + 4;
+            while (isspace((unsigned char)*filename)) filename++;
+            if (*filename == '\0') {
+                printf("Error: Missing filename for save command.\n");
+                continue;
+            }
+            save(filename, vectors, vector_count);
             continue;
         }
 
         // --- Print single vector ---
         if (strlen(input) == 1 && isalpha(input[0])) {
             Vector *v = find_vector(vectors, vector_count, input[0]);
-            if (v != NULL) {
+            if (v)
                 printf("%c = %.2f %.2f %.2f\n", v->name, v->x, v->y, v->z);
-            } else {
+            else
                 printf("Error: Vector '%c' not found.\n", input[0]);
-            }
             continue;
         }
 
-        // --- Tokenize command ---
-        lhs = strtok(input, " ");
-        eq  = strtok(NULL, " ");
-        rhs1 = strtok(NULL, " ");
-        char *maybe_next = strtok(NULL, " ");
+        // --- Parse command ---
+        char *lhs = strtok(input, " ");
+        char *eq = strtok(NULL, " ");
+        char *rhs1 = strtok(NULL, " ");
+        char *rhs2 = strtok(NULL, " ");
+        char *rhs3 = strtok(NULL, " ");
 
-        if (lhs == NULL || eq == NULL) {
+        if (!lhs || !eq || !rhs1) {
             printf("Error: Invalid command format.\n");
             continue;
         }
 
-        // --- Ensure LHS is a valid variable ---
         if (strlen(lhs) != 1 || !isalpha(lhs[0])) {
             printf("Error: Invalid variable name '%s'.\n", lhs);
             continue;
         }
 
-        // --- Vector creation: a = 1 2 3 ---
-        if (rhs1 && maybe_next) {
-            char *a2 = maybe_next;
-            char *a3 = strtok(NULL, " ");
-            if (a3 &&
-                strspn(rhs1, "0123456789.-") == strlen(rhs1) &&
-                strspn(a2, "0123456789.-") == strlen(a2) &&
-                strspn(a3, "0123456789.-") == strlen(a3)) {
+        // --- Create vector manually (a = 1 2 3) ---
+        if (rhs1 && rhs2 && rhs3 &&
+            strspn(rhs1, "0123456789.-") == strlen(rhs1) &&
+            strspn(rhs2, "0123456789.-") == strlen(rhs2) &&
+            strspn(rhs3, "0123456789.-") == strlen(rhs3)) {
 
-                Vector *v = create_or_get_vector(vectors, &vector_count, lhs[0]);
-                v->x = atof(rhs1);
-                v->y = atof(a2);
-                v->z = atof(a3);
-                printf("%c = %.2f %.2f %.2f\n", lhs[0], v->x, v->y, v->z);
-                continue;
-            } else {
-                // If not 3 numbers, treat as operator expression
-                op = a2;
-                rhs2 = a3;
-            }
-        } else {
-            printf("Error: Invalid command format.\n");
+            double x = atof(rhs1);
+            double y = atof(rhs2);
+            double z = atof(rhs3);
+            Vector *v = create_or_get_vector(vectors, &vector_count, lhs[0]);
+            v->x = x; v->y = y; v->z = z;
+            printf("%c = %.2f %.2f %.2f\n", lhs[0], x, y, z);
             continue;
         }
 
-        // --- Expressions: a = b + c, a = 3 * b, etc. ---
-        if (rhs1 && op && rhs2) {
-            Vector *v1 = find_vector(vectors, vector_count, rhs1[0]);
-            Vector *v2 = find_vector(vectors, vector_count, rhs2[0]);
-            Vector *dest = create_or_get_vector(vectors, &vector_count, lhs[0]);
-
-            char *endptr;
-            double scalar1 = strtod(rhs1, &endptr);
-            bool rhs1_is_scalar = (*endptr == '\0');
-
-            scalar1 = rhs1_is_scalar ? scalar1 : 0;
-
-            double scalar2 = strtod(rhs2, &endptr);
-            bool rhs2_is_scalar = (*endptr == '\0');
-
-            scalar2 = rhs2_is_scalar ? scalar2 : 0;
-
-            // --- Addition ---
-            if (strcmp(op, "+") == 0) {
-                if (v1 != NULL && v2 != NULL) {
-                    *dest = *v1;
-                    add(dest, v2);
-                    dest->name = lhs[0];
-                    printf("%c = %.2f %.2f %.2f\n", lhs[0], dest->x, dest->y, dest->z);
-                } else {
-                    printf("Error: One or both vectors not found for addition.\n");
-                }
-                continue;
-            }
-
-            // --- Subtraction ---
-            if (strcmp(op, "-") == 0) {
-                if (v1 != NULL && v2 != NULL) {
-                    *dest = *v1;
-                    subtract(dest, v2);
-                    dest->name = lhs[0];
-                    printf("%c = %.2f %.2f %.2f\n", lhs[0], dest->x, dest->y, dest->z);
-                } else {
-                    printf("Error: One or both vectors not found for subtraction.\n");
-                }
-                continue;
-            }
-
-            // --- Scalar Multiplication ---
-            if (strcmp(op, "*") == 0) {
-                if (rhs1_is_scalar && v2 != NULL) {
-                    *dest = *v2;
-                    smult(dest, scalar1);
-                    dest->name = lhs[0];
-                    printf("%c = %.2f %.2f %.2f\n", lhs[0], dest->x, dest->y, dest->z);
-                    continue;
-                }
-                if (v1 != NULL && rhs2_is_scalar) {
-                    *dest = *v1;
-                    smult(dest, scalar2);
-                    dest->name = lhs[0];
-                    printf("%c = %.2f %.2f %.2f\n", lhs[0], dest->x, dest->y, dest->z);
-                    continue;
-                }
-                printf("Error: Invalid scalar multiplication format.\n");
-                continue;
-            }
-
-            // --- Dot Product ---
-            if (strcmp(op, ".") == 0) {
-                if (v1 != NULL && v2 != NULL) {
-                    double result = dot(v1, v2);
-                    printf("%c = %.2f\n", lhs[0], result);
-                } else {
-                    printf("Error: Invalid vectors for dot product.\n");
-                }
-                continue;
-            }
-
-            // --- Cross Product ---
-            if (strcmp(op, "x") == 0 || strcmp(op, "X") == 0) {
-                if (v1 != NULL && v2 != NULL) {
-                    Vector cross_result = cross(v1, v2);
-                    *dest = cross_result;
-                    dest->name = lhs[0];
-                    printf("%c = %.2f %.2f %.2f\n", lhs[0], dest->x, dest->y, dest->z);
-                } else {
-                    printf("Error: Invalid vectors for cross product.\n");
-                }
-                continue;
-            }
-
-            printf("Error: Unknown operator '%s'.\n", op);
+        // --- Vector math operations (a = b + c, etc.) ---
+        if (!rhs2 || !rhs3) {
+            printf("Error: Invalid expression format.\n");
             continue;
         }
 
-        printf("Error: Invalid command format.\n");
+        char *op = rhs2;
+        Vector *v1 = find_vector(vectors, vector_count, rhs1[0]);
+        Vector *v2 = find_vector(vectors, vector_count, rhs3[0]);
+        Vector *dest = create_or_get_vector(vectors, &vector_count, lhs[0]);
+
+        // Try parsing scalars
+        char *endptr;
+        double scalar1 = strtod(rhs1, &endptr);
+        bool rhs1_is_scalar = rhs1 && *endptr == '\0';
+        double scalar2 = strtod(rhs3, &endptr);
+        bool rhs2_is_scalar = rhs3 && *endptr == '\0';
+
+        if (strcmp(op, "+") == 0) {
+            if (v1 && v2) {
+                *dest = *v1;
+                add(dest, v2);
+                dest->name = lhs[0];
+                printf("%c = %.2f %.2f %.2f\n", lhs[0], dest->x, dest->y, dest->z);
+            } else printf("Error: One or both vectors not found.\n");
+            continue;
+        }
+
+        if (strcmp(op, "-") == 0) {
+            if (v1 && v2) {
+                *dest = *v1;
+                subtract(dest, v2);
+                dest->name = lhs[0];
+                printf("%c = %.2f %.2f %.2f\n", lhs[0], dest->x, dest->y, dest->z);
+            } else printf("Error: One or both vectors not found.\n");
+            continue;
+        }
+
+        if (strcmp(op, "*") == 0) {
+            if (rhs1_is_scalar && v2) {
+                *dest = *v2;
+                smult(dest, scalar1);
+                dest->name = lhs[0];
+                printf("%c = %.2f %.2f %.2f\n", lhs[0], dest->x, dest->y, dest->z);
+                continue;
+            }
+            if (v1 && rhs2_is_scalar) {
+                *dest = *v1;
+                smult(dest, scalar2);
+                dest->name = lhs[0];
+                printf("%c = %.2f %.2f %.2f\n", lhs[0], dest->x, dest->y, dest->z);
+                continue;
+            }
+            printf("Error: Invalid scalar multiplication format.\n");
+            continue;
+        }
+
+        if (strcmp(op, ".") == 0) {
+            if (v1 && v2) {
+                double result = dot(v1, v2);
+                printf("%c = %.2f\n", lhs[0], result);
+            } else printf("Error: Invalid vectors for dot product.\n");
+            continue;
+        }
+
+        if (strcmp(op, "x") == 0 || strcmp(op, "X") == 0) {
+            if (v1 && v2) {
+                Vector cross_result = cross(v1, v2);
+                *dest = cross_result;
+                dest->name = lhs[0];
+                printf("%c = %.2f %.2f %.2f\n", lhs[0], dest->x, dest->y, dest->z);
+            } else printf("Error: Invalid vectors for cross product.\n");
+            continue;
+        }
+
+        printf("Error: Unknown or invalid command.\n");
     }
 
-    clear(vectors, vector_count);
+    // --- Free all allocated memory ---
+    for (int i = 0; i < vector_count; i++) {
+        free(vectors[i]);
+    }
+    free(vectors);
+
     return 0;
 }
 
-void print_help() {
-    printf("Welcome to Mini-MATLAB!\n");
-    printf("You can create up to %d vectors.\n", MAX_VECTORS);
+void print_help(void) {
+    printf("Welcome to the upgraded Mini-MATLAB!\n");
     printf("Commands:\n");
-    printf("  a = x y z             -> create vector\n");
-    printf("  a = b + c             -> add vectors\n");
-    printf("  d = a - b             -> subtract vectors\n");
-    printf("  e = 3 * b or e = b * 3 -> scalar multiply\n");
-    printf("  h = a . b             -> dot product\n");
-    printf("  g = a x b             -> cross product\n");
-    printf("  list                  -> show all vectors\n");
-    printf("  clear                 -> delete all vectors\n");
-    printf("  a                     -> show vector values\n");
-    printf("  help                  -> show this help\n");
-    printf("  quit                  -> exit program\n");
+    printf(" load <file>       -> load vectors from CSV file\n");
+    printf(" save <file>       -> save vectors to CSV file\n");
+    printf(" a = x y z         -> create vector\n");
+    printf(" a = b + c         -> add vectors\n");
+    printf(" a = b - c         -> subtract vectors\n");
+    printf(" a = 3 * b or b * 3 -> scalar multiply\n");
+    printf(" a = b . c         -> dot product\n");
+    printf(" a = b x c         -> cross product\n");
+    printf(" list              -> list all vectors\n");
+    printf(" clear             -> delete all vectors\n");
+    printf(" a                 -> show vector values\n");
+    printf(" help              -> show this help\n");
+    printf(" quit              -> exit program\n");
 }
